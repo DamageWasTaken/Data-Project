@@ -52,6 +52,42 @@ byte drenched[8] = {
   0b01110,
 };
 
+byte pretty_humid[8] = {
+  0b00000,
+  0b00100,
+  0b00100,
+  0b01010,
+  0b01010,
+  0b10111,
+  0b11111,
+  0b01110,
+
+};
+
+byte almost_humid[8] = {
+  0b00000,
+  0b00100,
+  0b00100,
+  0b01010,
+  0b01010,
+  0b10011,
+  0b10111,
+  0b01110,
+
+};
+
+byte very_dry[8] = {
+  0b00000,
+  0b00100,
+  0b00100,
+  0b01010,
+  0b01010,
+  0b10001,
+  0b10001,
+  0b01110,
+
+};
+
 byte too_hot[8] = {
   0b00100,
   0b01010,
@@ -60,6 +96,28 @@ byte too_hot[8] = {
   0b01110,
   0b11111,
   0b11111,
+  0b01110,
+};
+
+byte just_enough[8] = {
+  0b00100,
+  0b01010,
+  0b01100,
+  0b01010,
+  0b01010,
+  0b10111,
+  0b11111,
+  0b01110,
+};
+
+byte too_cold[8] = {
+  0b00100,
+  0b01010,
+  0b01100,
+  0b01010,
+  0b01010,
+  0b10001,
+  0b10001,
   0b01110,
 };
 
@@ -109,7 +167,13 @@ void setup() {
 
   lcd.createChar(0, celsius);
   lcd.createChar(1, drenched);
+  lcd.createChar(2, pretty_humid);
+  lcd.createChar(3, almost_humid);
+  lcd.createChar(4, very_dry);
+
   lcd.createChar(5, too_hot);
+  lcd.createChar(6, just_enough);
+  lcd.createChar(7, too_cold);
   
   // Print a message to the LCD.
   lcd.setCursor(0, 0);
@@ -175,7 +239,7 @@ void loop() {
   sensors_event_t humidity, temp;
   aht.getEvent(&humidity, &temp);
 
-  lcd.write((unsigned char)5);
+  colorAtTemp(temp.temperature);
 
   lcd.setRGB(colorR, colorG, colorB);
 
@@ -190,7 +254,7 @@ void loop() {
   lcd.print("C"); 
   
   lcd.setCursor(0, 1);
-  lcd.write((unsigned char)1);
+  humiIcon(humidity.relative_humidity);
   lcd.print("Humi = "); 
   lcd.print(humidity.relative_humidity);
   lcd.print("%"); 
@@ -236,6 +300,33 @@ void loop() {
   avr_pool.reads++;
 
   delay(50);
+}
+
+void tempIcon(float temperature){
+  if (temperature<=min_temp){
+    lcd.write((unsigned char)7);
+  } else
+  if (min_temp<temperature && temperature<=max_temp){
+    lcd.write((unsigned char)6);
+  } else
+  if (temperature>max_temp){
+    lcd.write((unsigned char)5);
+  }
+}
+
+void humiIcon(float humidity){
+  if (humidity<=25){
+    lcd.write((unsigned char)4);
+  } else
+  if (25<humidity && humidity<=50){
+    lcd.write((unsigned char)3);
+  } else
+  if (50<humidity && humidity<=75){
+    lcd.write((unsigned char)2);
+  } else
+  if (humidity>75){
+    lcd.write((unsigned char)1);
+  }
 }
 
 void colorAtTemp(float temp){
