@@ -104,9 +104,9 @@ byte just_enough[8] = {
   0b01010,
   0b01100,
   0b01010,
-  0b01010,
+  0b01110,
+  0b10011,
   0b10111,
-  0b11111,
   0b01110,
 };
 
@@ -252,7 +252,7 @@ void loop() {
   lcd.print(temp.temperature);
   lcd.write((unsigned char)0);
   lcd.print("C"); 
-  
+
   lcd.setCursor(0, 1);
   humiIcon(humidity.relative_humidity);
   lcd.print("Humi = "); 
