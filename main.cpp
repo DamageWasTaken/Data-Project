@@ -4,6 +4,8 @@
 #include <pins_arduino.h>
 #include "Adafruit_AHTX0.h"
 #include <math.h>
+#include <SPI.h>
+#include <SD.h>
 
 Adafruit_AHTX0 aht;
 
@@ -11,6 +13,8 @@ Adafruit_AHTX0 aht;
 #define DHTPIN SDA
 
 void colorAtTemp(float temp);
+void tempIcon(float temperature);
+void humiIcon(float humidity);
 
 rgb_lcd lcd;
 
@@ -18,18 +22,94 @@ int colorR = 0;
 int colorG = 255;
 int colorB = 0;
 
-float min_temp = 10;
-float eq_temp = 20;
-float max_temp = 40;
 
-void setup() 
-{
+const short cd_pin = 9;
+
+const float min_temp = 20;
+const float eq_temp = 25;
+const float max_temp = 30;
+
+byte celsius[8] = {
+  0b00110,
+  0b01001,
+  0b01001,
+  0b00110,
+  0b00000,
+  0b00000,
+  0b00000,
+  0b00000,
+
+};
+
+byte drenched[8] = {
+  0b00000,
+  0b00100,
+  0b00100,
+  0b01110,
+  0b01110,
+  0b11111,
+  0b11111,
+  0b01110,
+};
+
+byte too_hot[8] = {
+  0b00100,
+  0b01010,
+  0b01100,
+  0b01010,
+  0b01110,
+  0b11111,
+  0b11111,
+  0b01110,
+};
+
+
+
+struct format{
+  char delimiter;
+  char endline;
+  char decimal_sepperator;
+  String filename;
+  String filepath;
+  File* file;
+};
+
+format formatDK;
+File dataDK;
+
+format formatInter;
+File data;
+
+format* formats[2] = {&formatDK, &formatInter};
+
+
+void setup() {
   Serial.begin(9600);
+  while (!Serial);
+
+  // DK
+  formatDK.delimiter = ';';
+  formatDK.endline = '\n';
+  formatDK.decimal_sepperator = ',';
+  formatDK.filename = "datadk.txt";
+  formatDK.file = &dataDK;
+
+
+  //International
+  formatInter.delimiter = ',';
+  formatInter.endline = '\n';
+  formatInter.decimal_sepperator = '.';
+  formatInter.filename = "data.txt";
+  formatInter.file = &data;
 
   // set up the LCD's number of columns and rows:
   lcd.begin(16, 2);
   
   lcd.setRGB(colorR, colorG, colorB);
+
+  lcd.createChar(0, celsius);
+  lcd.createChar(1, drenched);
+  lcd.createChar(5, too_hot);
   
   // Print a message to the LCD.
   lcd.setCursor(0, 0);
@@ -40,6 +120,12 @@ void setup()
     delay(1000);
     lcd.print(".");
   }
+  if(!SD.begin(cd_pin)){
+    lcd.setRGB(255,0,0);
+    lcd.setCursor(0, 1);
+    lcd.print("Failed - No SD");
+    while(!SD.begin(cd_pin));
+  }
   delay(500);
 
   if (!aht.begin()) {
@@ -47,35 +133,107 @@ void setup()
     while (1) delay(10);
   }
 
+  static String readings_folder = "/Reading";
+  int current = 0;
+
+  while (true){
+    if(SD.exists(readings_folder+String(current))){
+      current++;
+      continue;
+    } else {
+      SD.mkdir(readings_folder+String(current));
+      readings_folder += String(current);
+      break;
+    }
+  }
+  for (short i = 0; i<sizeof(formats)/sizeof(formats[0]);i++){
+    formats[i]->filepath = readings_folder + '/' + formats[i]->filename;
+
+    if(SD.exists(formats[i]->filepath)){
+      SD.remove(formats[i]->filepath);
+    }
+    
+    *formats[i]->file = SD.open(formats[i]->filepath, FILE_WRITE);
+    formats[i]->file->close();
+  }
   delay(1000);
 }
 
-void loop() {
+unsigned long start = millis();
+unsigned long rep_interval = 10000;
+unsigned long last_interval = millis();
+unsigned long now = millis();
 
+struct {
+  short reads;
+  float temp;
+  float humid;
+} avr_pool;
+
+void loop() {
+  now = millis();
   sensors_event_t humidity, temp;
   aht.getEvent(&humidity, &temp);
 
-  colorAtTemp(temp.temperature);
+  lcd.write((unsigned char)5);
 
   lcd.setRGB(colorR, colorG, colorB);
 
   lcd.clear();
   lcd.setCursor(0, 0);
 
+  tempIcon(temp.temperature);
+
   lcd.print("Temp = ");
   lcd.print(temp.temperature);
+  lcd.write((unsigned char)0);
   lcd.print("C"); 
+  
   lcd.setCursor(0, 1);
-  lcd.print("Hum = "); 
+  lcd.write((unsigned char)1);
+  lcd.print("Humi = "); 
   lcd.print(humidity.relative_humidity);
   lcd.print("%"); 
 
-  Serial.print(millis()/1000);
+  Serial.print(millis()/60000);
   Serial.print(","); // time
   Serial.print(temp.temperature);
   Serial.print(","); // temp
   Serial.println(humidity.relative_humidity); // humidity
 
+  if(!SD.begin(cd_pin)){
+    lcd.setRGB(255,0,0);
+    lcd.setCursor(0, 0);
+    lcd.print("Weather Project");
+    lcd.setCursor(0, 1);
+    lcd.print("Failed - No SD");
+    while(!SD.begin(cd_pin));
+  }
+
+  Serial.println(now - last_interval);
+  if (now - last_interval >= rep_interval){
+    for (unsigned short i = 0; i<static_cast<unsigned short>(sizeof(formats)/sizeof(formats[0]));i++){
+      *formats[i]->file = SD.open(formats[i]->filepath, FILE_WRITE);
+      String fileline = String(static_cast<float>(now-start)/60000)+formats[i]->delimiter+String(avr_pool.temp/avr_pool.reads)+formats[i]->delimiter+String(avr_pool.humid/avr_pool.reads)+formats[i]->endline;
+      if (formats[i]->decimal_sepperator != '.'){
+        for(short n = 0; n<fileline.length(); n++){
+          if (fileline[n] == '.'){
+            fileline[n] = formats[i]->decimal_sepperator;
+          }
+        }
+      }
+      formats[i]->file->print(fileline);
+      formats[i]->file->close();
+    }
+    last_interval = millis();
+    avr_pool.humid = 0;
+    avr_pool.temp = 0;
+    avr_pool.reads = 0;
+  }
+
+  avr_pool.humid += humidity.relative_humidity;
+  avr_pool.temp += temp.temperature;
+  avr_pool.reads++;
 
   delay(50);
 }
